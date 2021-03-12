@@ -115,7 +115,6 @@ int addDirectoryEntry(Inode* inode, MiniFs* miniFs, u_int inode_num, char file_n
             return 0;
         }
     }
-    // работа с косвенными ссылками
     return -1;
 }
 
@@ -133,7 +132,6 @@ int rmDirectoryEntry(Inode* inode, char dir_name[]) {
             }
         }
     }
-    // работа с косвенными ссылками
     return -1;
 }
 
@@ -192,6 +190,9 @@ Inode* goToInode(MiniFs* miniFs, char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN],
         ++dir_num;
         inode_ptr = getRootDirInode(miniFs);
     } else {
+        if (!isDirectory(USER_TMP_INODE)) {
+            USER_TMP_INODE = &miniFs->groups_descriptors[0].bg_inode_table[0];
+        }
         inode_ptr = USER_TMP_INODE;
     }
 

@@ -139,7 +139,7 @@ void runFs(MiniFs* miniFs) {
 
 int main() {
 
-    MiniFs* miniFs = calloc(sizeof(MiniFs), 1);
+    MiniFs* miniFs = calloc(sizeof(MiniFs) + 1, 1);
     initMiniFs(miniFs);
 
     runFs(miniFs);

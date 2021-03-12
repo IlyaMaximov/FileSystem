@@ -214,7 +214,7 @@ void rmCommand(Inode* parent_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* mi
         printf("This file does not exist \n");
         return;
     } else if (!isFile(inode)) {
-        printf("Unable to call rm command for regular file \n");
+        printf("Unable to call rm command for directory \n");
         return;
     }
 
@@ -223,33 +223,34 @@ void rmCommand(Inode* parent_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* mi
 }
 
 void saveMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
-    int fd = open(file_name, O_RDWR|O_CREAT|O_TRUNC, S_IRWXU|S_IRWXG|S_IRWXO);
-    if (fd == -1) {
+    FILE* fd = fopen(file_name, "wb");
+    if (fd == NULL) {
         printf("Couldn't open the file for writing\n");
         return;
     }
 
-    int bytes_cnt = write(fd, (char *)miniFs, sizeof(struct MiniFs));
+    ssize_t bytes_cnt = fwrite(miniFs, 1, sizeof(MiniFs), fd);
+
     if (bytes_cnt == -1) {
         fprintf(stderr, "An unexpected error occurred\n");
     }
-    close(fd);
+    fclose(fd);
 }
 
 void loadMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
-    int fd = open(file_name, O_RDONLY);
-    if (fd == -1) {
+    FILE* fd = fopen(file_name, "rb");
+    if (fd == NULL) {
         printf("Couldn't open the file\n");
         return;
     } else if (getFileSize(file_name) < sizeof(struct MiniFs)) {
         printf("File is too small for file system\n");
-        close(fd);
+        fclose(fd);
         return;
     }
 
-    int bytes_cnt = read(fd, (char *)miniFs, sizeof(struct MiniFs));
+    ssize_t bytes_cnt = fread(miniFs, 1, sizeof(MiniFs), fd);
     if (bytes_cnt == -1) {
         fprintf(stderr, "An unexpected error occurred\n");
     }
-    close(fd);
+    fclose(fd);
 }
