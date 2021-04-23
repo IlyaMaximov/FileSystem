@@ -10,7 +10,7 @@ typedef struct GroupDescriptor GroupDescriptor;
 struct GroupDescriptor {
     BlockBitmap* bg_block_bitmap;  // Адрес битовой карты свободных блоков
     BlockBitmap* bg_inode_bitmap;  // Адрес битовой карты свободных индексных дескрипторов
-    Inode* bg_inode_table;        // Адрес таблицы индексных дескрипторов
+    Inode* bg_inode_table;         // Адрес таблицы индексных дескрипторов
     Block* bg_data_blocks;         // Адрес блоков данных
 
     uint32_t bg_free_blocks_count; // Количество свободных блоков в группе

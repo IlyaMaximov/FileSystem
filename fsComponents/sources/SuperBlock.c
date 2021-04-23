@@ -1,4 +1,4 @@
-#include "SuperBlock.h"
+#include "../headers/SuperBlock.h"
 
 void initSuperBlock(SuperBlock* super_block) {
     super_block->s_inodes_count = (1 << 16);

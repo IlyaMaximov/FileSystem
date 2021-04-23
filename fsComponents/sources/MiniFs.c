@@ -1,4 +1,4 @@
-#include "MiniFs.h"
+#include "../headers/MiniFs.h"
 
 Inode* USER_TMP_INODE = NULL;
 

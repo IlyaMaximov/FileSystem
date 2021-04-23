@@ -1,4 +1,4 @@
-#include "GroupDescriptor.h"
+#include "../headers/GroupDescriptor.h"
 
 void initGroupsDescriptors(GroupDescriptor* groups_descriptors_ptr, SuperBlock* super_block) {
     for (u_int32_t group_num = 0; group_num < super_block->s_groups_count; ++group_num) {

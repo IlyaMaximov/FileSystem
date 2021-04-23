@@ -1,4 +1,4 @@
-#include "Inode.h"
+#include "../headers/Inode.h"
 
 void initInode(Inode* inode) {
 
