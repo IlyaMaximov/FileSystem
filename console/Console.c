@@ -346,11 +346,8 @@ void saveMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
         return;
     }
 
-    ssize_t bytes_cnt = fwrite(miniFs, 1, sizeof(MiniFs), fd);
+    saveFs(miniFs, fd);
 
-    if (bytes_cnt == -1) {
-        fprintf(stderr, "An unexpected error occurred\n");
-    }
     fclose(fd);
 }
 
@@ -365,9 +362,7 @@ void loadMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
         return;
     }
 
-    ssize_t bytes_cnt = fread(miniFs, 1, sizeof(MiniFs), fd);
-    if (bytes_cnt == -1) {
-        fprintf(stderr, "An unexpected error occurred\n");
-    }
+    loadFs(miniFs, fd);
+
     fclose(fd);
 }

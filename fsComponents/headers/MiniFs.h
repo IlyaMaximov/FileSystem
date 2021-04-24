@@ -12,7 +12,7 @@
 
 #include "SuperBlock.h"
 #include "Block.h"
-#include "GroupDescriptor.h"
+#include "GroupDescriptors.h"
 #include "GroupBlocks.h"
 
 #define MAX_DIR_CNT_PATH 10
@@ -23,7 +23,7 @@ typedef struct MiniFs MiniFs;
 struct MiniFs {
     Block loader;
     SuperBlock super_block;
-    GroupDescriptor groups_descriptors[16];
+    GroupDescriptors groups_descriptors[16];
     GroupBlocks groups_blocks[16];
 };
 
@@ -53,5 +53,8 @@ Inode* goToNextInode(Inode* prev_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs
 
 Inode* goToInode(MiniFs* miniFs, char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN], u_int path_depth);
 
+void saveFs(MiniFs* miniFs, FILE* file_stream);
+
+void loadFs(MiniFs* miniFs, FILE* file_stream);
 
 #endif //MINIFS_MINIFS_H

@@ -8,7 +8,7 @@ SET(CMAKE_EXE_LINKER_FLAGS  "${CMAKE_EXE_LINKER_FLAGS} ${GCC_COVERAGE_LINK_FLAGS
 
 set(FsSources
     fsComponents/sources/Block.c
-    fsComponents/sources/GroupDescriptor.c
+    fsComponents/sources/GroupDescriptors.c
     fsComponents/sources/Inode.c
     fsComponents/sources/SuperBlock.c
     fsComponents/sources/MiniFs.c

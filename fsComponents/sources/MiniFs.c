@@ -49,7 +49,7 @@ void freeEmptyBlock(DirectoryBlock* block, MiniFs* miniFs) {
 }
 
 void freeInode(Inode* inode, MiniFs* miniFs) {
-    GroupDescriptor* group_desc = &miniFs->groups_descriptors[inode->i_gid];
+    GroupDescriptors* group_desc = &miniFs->groups_descriptors[inode->i_gid];
     u_int inode_num_group = inode->i_id % miniFs->super_block.s_inodes_per_group;
 
     ++group_desc->bg_free_inodes_count;
@@ -147,7 +147,7 @@ void initRootDirectory(MiniFs* miniFs) {
 void initMiniFs(MiniFs* miniFs) {
     memset(miniFs, 0, sizeof(MiniFs));
     initSuperBlock(&miniFs->super_block);
-    initGroupsDescriptors((GroupDescriptor *)&miniFs->groups_descriptors, &miniFs->super_block);
+    initGroupsDescriptors((GroupDescriptors *)&miniFs->groups_descriptors, &miniFs->super_block);
     initRootDirectory(miniFs);
 }
 
@@ -206,3 +206,78 @@ Inode* goToInode(MiniFs* miniFs, char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN],
     return inode_ptr;
 }
 
+void saveFs(MiniFs* miniFs, FILE* file_stream) {
+    fwrite(miniFs, sizeof(*miniFs), 1, file_stream);
+
+    GroupDescriptors* group_desc = miniFs->groups_descriptors;
+    for (u_int group_num = 0; group_num < miniFs->super_block.s_groups_count; ++group_num) {
+
+        long inode_bitmap_shift = (char *) group_desc[group_num].bg_inode_bitmap - (char *) group_desc;
+        long block_bitmap_shift = (char *) group_desc[group_num].bg_block_bitmap - (char *) group_desc;
+        long inode_table_shift =  (char *) group_desc[group_num].bg_inode_table -  (char *) group_desc;
+        long block_data_shift =   (char *) group_desc[group_num].bg_data_blocks -  (char *) group_desc;
+//        printf("%ld\n", block_data_shift);
+
+        fwrite(&inode_bitmap_shift, sizeof(inode_bitmap_shift), 1, file_stream);
+        fwrite(&block_bitmap_shift, sizeof(block_bitmap_shift), 1, file_stream);
+        fwrite(&inode_table_shift, sizeof(inode_table_shift), 1, file_stream);
+        fwrite(&block_data_shift, sizeof(block_data_shift), 1, file_stream);
+    }
+
+    for (u_int group_num = 0; group_num < miniFs->super_block.s_groups_count; ++group_num) {
+        for (u_int inode_num = 0; inode_num < miniFs->super_block.s_inodes_count / 16; ++inode_num) {
+
+            Inode inode = miniFs->groups_blocks[group_num].inode_table[inode_num];
+
+            long block_shifts[15];
+            for (u_int block_num = 0; block_num < 15; ++block_num) {
+                if (inode.i_block[block_num] == NULL) {
+                    block_shifts[block_num] = (long) NULL;
+                } else {
+                    block_shifts[block_num] = (char *) inode.i_block[block_num] - (char *) miniFs->groups_blocks;
+                }
+            }
+            fwrite(block_shifts, sizeof(long), 15, file_stream);
+        }
+    }
+}
+
+void loadFs(MiniFs* miniFs, FILE* file_stream) {
+
+    fread(miniFs, sizeof(*miniFs), 1, file_stream);
+
+    GroupDescriptors* group_desc = miniFs->groups_descriptors;
+    for (u_int group_num = 0; group_num < miniFs->super_block.s_groups_count; ++group_num) {
+
+        long inode_bitmap_shift, block_bitmap_shift, inode_table_shift, block_data_shift;
+
+        fread(&inode_bitmap_shift, sizeof(inode_bitmap_shift), 1, file_stream);
+        fread(&block_bitmap_shift, sizeof(block_bitmap_shift), 1, file_stream);
+        fread(&inode_table_shift, sizeof(inode_table_shift), 1, file_stream);
+        fread(&block_data_shift, sizeof(block_data_shift), 1, file_stream);
+
+        group_desc[group_num].bg_inode_bitmap = (BlockBitmap *) ((char *) group_desc + inode_bitmap_shift);
+        group_desc[group_num].bg_block_bitmap = (BlockBitmap *) ((char *) group_desc + block_bitmap_shift);
+        group_desc[group_num].bg_inode_table = (Inode *) ((char *) group_desc + inode_table_shift);
+        group_desc[group_num].bg_data_blocks = (Block *) ((char *) group_desc + block_data_shift);
+    }
+
+    for (u_int group_num = 0; group_num < miniFs->super_block.s_groups_count; ++group_num) {
+        for (u_int inode_num = 0; inode_num < miniFs->super_block.s_inodes_count / 16; ++inode_num) {
+
+            Inode* inode = &miniFs->groups_blocks[group_num].inode_table[inode_num];
+
+            long block_shifts[15];
+            fread(block_shifts, sizeof(long), 15, file_stream);
+
+            for (u_int block_num = 0; block_num < 15; ++block_num) {
+                if (block_shifts[block_num] == (long) NULL) {
+                    inode->i_block[block_num] = NULL;
+                } else {
+                    inode->i_block[block_num] = (Block *) ((char *) miniFs->groups_blocks + block_shifts[block_num]);
+                }
+            }
+        }
+    }
+
+}

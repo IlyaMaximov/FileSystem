@@ -1,7 +1,4 @@
-#include <stdio.h>
 #include <stdlib.h>
-#include <libsync.h>
-
 #include "console/Console.h"
 
 int main() {

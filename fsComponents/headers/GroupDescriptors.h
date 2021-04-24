@@ -6,8 +6,8 @@
 #include "Inode.h"
 #include "SuperBlock.h"
 
-typedef struct GroupDescriptor GroupDescriptor;
-struct GroupDescriptor {
+typedef struct GroupDescriptors GroupDescriptors;
+struct GroupDescriptors {
     BlockBitmap* bg_block_bitmap;  // Адрес битовой карты свободных блоков
     BlockBitmap* bg_inode_bitmap;  // Адрес битовой карты свободных индексных дескрипторов
     Inode* bg_inode_table;         // Адрес таблицы индексных дескрипторов
@@ -18,7 +18,7 @@ struct GroupDescriptor {
     uint32_t bg_pad[6];            // Выравнивание до размера 64B (теперь весь BGD влезает в блок)
 };
 
-void initGroupsDescriptors(GroupDescriptor* groups_descriptors_ptr, SuperBlock* super_block);
+void initGroupsDescriptors(GroupDescriptors* groups_descriptors_ptr, SuperBlock* super_block);
 
 
 #endif //MINIFS_GROUPDESCRIPTOR_H
