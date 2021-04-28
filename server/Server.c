@@ -32,7 +32,7 @@ void demonize() {
 }
 
 void initServer() {
-    //demonize();
+    demonize();
 
     FS_SERVER.listener = socket(AF_INET, SOCK_STREAM, 0);
     FS_SERVER.addr.sin_family = AF_INET;
