@@ -1,4 +1,5 @@
 #include "Console.h"
+#include "../server/Server.h"
 
 extern Inode* USER_TMP_INODE;
 
@@ -57,8 +58,7 @@ int parseAndExecuteCommand(char console_command[], MiniFs* miniFs) {
             strcmp(command, "touch") != 0 && strcmp(command, "cat") != 0 && strcmp(command, "write") != 0 &&
             strcmp(command, "cd") != 0 && strcmp(command, "rmdir") != 0) {
 
-            fprintf(stdout, "Incorrect command \n");
-            fflush(stdout);
+            sendToClient("Incorrect command \n");
         }
 
         u_int dir_cnt = 0;
@@ -67,8 +67,7 @@ int parseAndExecuteCommand(char console_command[], MiniFs* miniFs) {
         }
         Inode *inode = goToInode(miniFs, path, dir_cnt);
         if (inode == NULL) {
-            fprintf(stdout, "Incorrect path \n");
-            fflush(stdout);
+            sendToClient("Incorrect path \n");
             return 0;
         }
 
@@ -98,58 +97,49 @@ void runFs(MiniFs* miniFs) {
     int symbol;
     USER_TMP_INODE = &miniFs->groups_descriptors[0].bg_inode_table[0];
 
-    printf("Use 'help' if you are experiencing difficulties\n");
+    sendToClient("Use 'help' if you are experiencing difficulties\n");
     while (1) {
-        printf("mini-fs:~$ ");
-        fflush(stdout);
+        sendToClient("mini-fs:~$ ");
 
-        if ((symbol = getchar()) == '\n') {
-            continue;
-        } else {
-            ungetc(symbol, stdin);
+        char* command = receiveFromClient();
+        if (strcmp(command, "\n") != 0) {
+            int result_code = parseAndExecuteCommand(command, miniFs);
+            if (result_code == -1) {
+                return;
+            }
         }
 
-        char command[70];
-        if (fgets(command, sizeof(command), stdin) == NULL) {
-            return;
-        }
-        int result_code = parseAndExecuteCommand(command, miniFs);
-        if (result_code == -1) {
-            return;
-        }
     }
 }
 
 void help() {
-    printf("mkdir  *dir_name*  : create empty directories     \n");
-    printf("rmdir  *dir_name*  : delete empty directories     \n");
-    printf("ls     *dir_name*  : show directories             \n");
-    printf("cd     *dir_name*  : navigate between directories \n");
-    printf("touch  *file_name* : create empty regular file    \n");
-    printf("write  *file_name* : write in regular file        \n");
-    printf("cat    *file_name* : read your regular file       \n");
-    printf("rm     *file_name* : delete your regular file     \n");
-    printf("exit   *file_name* : leave file system            \n");
-    printf("-------------------------------------------------\n");
-    printf("Special functions: \n");
-    printf("save   *file_name*: save mini fs in file on your PC\n");
-    printf("load   *file_name*: load mini fs from file on your PC \n");
+    sendToClient("mkdir  *dir_name*  : create empty directories     \n");
+    sendToClient("rmdir  *dir_name*  : delete empty directories     \n");
+    sendToClient("ls     *dir_name*  : show directories             \n");
+    sendToClient("cd     *dir_name*  : navigate between directories \n");
+    sendToClient("touch  *file_name* : create empty regular file    \n");
+    sendToClient("write  *file_name* : write in regular file        \n");
+    sendToClient("cat    *file_name* : read your regular file       \n");
+    sendToClient("rm     *file_name* : delete your regular file     \n");
+    sendToClient("exit   *file_name* : leave file system            \n");
+    sendToClient("-------------------------------------------------\n");
+    sendToClient("Special functions: \n");
+    sendToClient("save   *file_name*: save mini fs in file on your PC\n");
+    sendToClient("load   *file_name*: load mini fs from file on your PC \n");
 }
 
 
 void mkdirCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
 
     if (isDirContainName(inode, dir_name)) {
-        printf("This directory already exist\n");
-        fflush(stdout);
+        sendToClient("This directory already exist\n");
         return ;
     }
 
     Inode* new_dir_inode = getFreeInode(miniFs);
 
     if (new_dir_inode == NULL) {
-        printf("File system can not add new directory\n");
-        fflush(stdout);
+        sendToClient("File system can not add new directory\n");
         return ;
     }
 
@@ -169,10 +159,10 @@ void lsCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
     }
 
     if (inode == NULL) {
-        printf("This path does not exist \n");
+        sendToClient("This path does not exist \n");
         return;
     } else if (!isDirectory(inode)) {
-        printf("Unable to call ls command for regular file \n");
+        sendToClient("Unable to call ls command for regular file \n");
         return;
     }
 
@@ -180,7 +170,8 @@ void lsCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
         Block* data_block = inode->i_block[addr_num];
         for (u_int elem_num = 0; elem_num < 64; ++elem_num) {
             if (!isEmptyDirEntry(&data_block->dir_entries[elem_num])) {
-                printf("%s \n", data_block->dir_entries[elem_num].obj_name);
+                sendToClient(data_block->dir_entries[elem_num].obj_name);
+                sendToClient("\n");
             }
         }
     }
@@ -193,10 +184,10 @@ void cdCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
     }
 
     if (inode == NULL) {
-        printf("This path does not exist \n");
+        sendToClient("This path does not exist \n");
         return;
     } else if (!isDirectory(inode)) {
-        printf("Unable to call cd command for regular file \n");
+        sendToClient("Unable to call cd command for regular file \n");
         return;
     }
 
@@ -211,14 +202,13 @@ void rmdirCommand(Inode* parent_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs*
     }
 
     if (inode == NULL) {
-        printf("This directory does not exist \n");
+        sendToClient("This directory does not exist \n");
         return;
     } else if (!isDirectory(inode)) {
-        printf("Unable to call rmdir command for regular file \n");
+        sendToClient("Unable to call rmdir command for regular file \n");
         return;
     } else if (!isEmptyDir(inode, miniFs)) {
-        printf("This directory is not empty \n");
-        fflush(stdout);
+        sendToClient("This directory is not empty \n");
         return;
     }
 
@@ -231,16 +221,14 @@ void rmdirCommand(Inode* parent_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs*
 void touchCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
 
     if (isDirContainName(parent_inode, file_name)) {
-        printf("This file or directory already exist\n");
-        fflush(stdout);
+        sendToClient("This file or directory already exist\n");
         return ;
     }
 
     Inode* new_file_inode = getFreeInode(miniFs);
 
     if (new_file_inode == NULL) {
-        printf("File system can not add new file\n");
-        fflush(stdout);
+        sendToClient("File system can not add new file\n");
         return ;
     }
 
@@ -256,14 +244,12 @@ void writeCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs
     char file_text[100000];
     memset(file_text, 0, sizeof(file_text));
     u_int text_size = 0;
-    printf("Use ':q' for exit and ':wq' for save result and exit \n");
+    sendToClient("Use ':q' for exit and ':wq' for save result and exit \n");
     while (1) {
-        printf("> ");
-        fflush(stdout);
+        sendToClient("> ");
 
-        char str_text[12288];
-        memset(str_text, 0, sizeof(str_text));
-        if (fgets(str_text, sizeof(str_text), stdin) == NULL || strcmp(str_text, ":q\n") == 0) {
+        char* str_text = receiveFromClient();
+        if (strcmp(str_text, ":q\n") == 0) {
             return;
         } else if (strcmp(str_text, ":wq\n") == 0) {
             break;
@@ -305,10 +291,10 @@ void catCommand(Inode* inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs)
     }
 
     if (inode == NULL) {
-        printf("This file does not exist \n");
+        sendToClient("This file does not exist \n");
         return;
     } else if (!isFile(inode)) {
-        printf("Unable to call cat command for directory \n");
+        sendToClient("Unable to call cat command for directory \n");
         return;
     }
 
@@ -318,7 +304,8 @@ void catCommand(Inode* inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs)
             continue;
         }
 
-        puts((char *) data_block);
+        sendToClient((char *) data_block);
+        sendToClient("\n");
     }
 }
 
@@ -327,10 +314,10 @@ void rmCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* m
     Inode* inode = goToNextInode(parent_inode, file_name, miniFs);
 
     if (inode == NULL) {
-        printf("This file does not exist \n");
+        sendToClient("This file does not exist \n");
         return;
     } else if (!isFile(inode)) {
-        printf("Unable to call rm command for directory \n");
+        sendToClient("Unable to call rm command for directory \n");
         return;
     }
 
@@ -342,7 +329,7 @@ void rmCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* m
 void saveMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
     FILE* fd = fopen(file_name, "wb");
     if (fd == NULL) {
-        printf("Couldn't open the file for writing\n");
+        sendToClient("Couldn't open the file for writing\n");
         return;
     }
 
@@ -354,10 +341,10 @@ void saveMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
 void loadMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
     FILE* fd = fopen(file_name, "rb");
     if (fd == NULL) {
-        printf("Couldn't open the file\n");
+        sendToClient("Couldn't open the file\n");
         return;
     } else if (getFileSize(file_name) < sizeof(struct MiniFs)) {
-        printf("File is too small for file system\n");
+        sendToClient("File is too small for file system\n");
         fclose(fd);
         return;
     }

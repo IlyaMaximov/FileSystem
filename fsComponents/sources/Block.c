@@ -2,12 +2,6 @@
 
 #include <string.h>
 
-void printBlock(Block* block) {
-    for (u_int i = 0; i < 1024; ++i) {
-        printf("%c", block->data[i]);
-    }
-}
-
 int getBit(u_int bit_num, BlockBitmap* block_bitmap) {
     char* data_block = (char *) block_bitmap;
     u_int block_num = bit_num / 8;

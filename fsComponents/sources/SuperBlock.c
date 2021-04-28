@@ -24,6 +24,7 @@ void initSuperBlock(SuperBlock* super_block) {
                                         (2 + super_block->s_inodes_per_group * sizeof(Inode) / super_block->s_log_block_size + super_block->s_blocks_per_group);
 }
 
+#ifdef DEBUG
 void printSuperBlock(SuperBlock* super_block) {
     printf("Super block size: %ld (should be 1024)\n", sizeof(*super_block));
 
@@ -45,3 +46,4 @@ void printSuperBlock(SuperBlock* super_block) {
     printf("Magic number: %x \n", super_block->s_magic);
 
 }
+#endif

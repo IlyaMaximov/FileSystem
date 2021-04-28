@@ -15,13 +15,12 @@ set(FS_SOURCES
 
 set(CLIENT_SOURCES
     client/Client.c
-)
+    client/main.c)
 
 set(SERVER_SOURCES
-    server/Server.c
     console/Console.c
-)
+    server/Server.c
+    server/main.c)
 
 add_executable(server ${SERVER_SOURCES} ${FS_SOURCES})
 add_executable(client ${CLIENT_SOURCES})
-add_executable(miniFs ${FS_SOURCES} main.c console/Console.c)
