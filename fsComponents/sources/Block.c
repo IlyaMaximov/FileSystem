@@ -1,7 +1,5 @@
 #include "../headers/Block.h"
 
-#include <string.h>
-
 int getBit(u_int bit_num, BlockBitmap* block_bitmap) {
     char* data_block = (char *) block_bitmap;
     u_int block_num = bit_num / 8;
@@ -34,6 +32,11 @@ int getFreeBit(u_int bit_cnt, BlockBitmap* block_bitmap) {
 
 int isEmptyDirEntry(DirectoryEntry* dir_entry) {
     return dir_entry->inode_id == 0 && strcmp(dir_entry->obj_name, "") == 0;
+}
+
+int isDefaultDirEntry(DirectoryEntry* dir_entry) {
+    return strcmp(dir_entry->obj_name, "") == 0 || strcmp(dir_entry->obj_name, ".") == 0 ||
+           strcmp(dir_entry->obj_name, "..") == 0;
 }
 
 DirectoryEntry* getFreeDirectoryEntry(DirectoryBlock* block) {

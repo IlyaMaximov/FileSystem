@@ -3,7 +3,25 @@
 
 extern Inode* USER_TMP_INODE;
 
-u_int parsePath(char file_path[], char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN]) {
+int64_t getFileSize(char file_name[]) {
+    int64_t file_size = 0;
+    struct stat file_stat_buff;
+    int fd = open(file_name, O_RDONLY);
+    if (fd == -1) {
+        return -1;
+    }
+
+    if ((fstat(fd, &file_stat_buff) != 0) || (!S_ISREG(file_stat_buff.st_mode))) {
+        file_size = -1;
+    }
+    else {
+        file_size = file_stat_buff.st_size;
+    }
+    close(fd);
+    return file_size;
+}
+
+u_int parsePath(char file_path[], char path[MAX_DIR_CNT_PATH][FILE_TITLE_MAX_LEN]) {
     u_int path_len = strlen(file_path);
     u_int tmp_name = 0;
     u_int dir_path = 0, dir_end = 0;
@@ -36,7 +54,7 @@ u_int parsePath(char file_path[], char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN]
 int parseAndExecuteCommand(char console_command[], MiniFs* miniFs) {
     char command[15];
     char file_path[50];
-    char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN];
+    char path[MAX_DIR_CNT_PATH][FILE_TITLE_MAX_LEN];
 
     memset(command, 0, sizeof(command));
     memset(file_path, 0, sizeof(file_path));
@@ -94,7 +112,6 @@ int parseAndExecuteCommand(char console_command[], MiniFs* miniFs) {
 
 
 void runFs(MiniFs* miniFs) {
-    int symbol;
     USER_TMP_INODE = &miniFs->groups_descriptors[0].bg_inode_table[0];
 
     sendToClient("Use 'help' if you are experiencing difficulties\n");
@@ -129,8 +146,7 @@ void help() {
 }
 
 
-void mkdirCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
-
+void mkdirCommand(Inode* inode, char dir_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     if (isDirContainName(inode, dir_name)) {
         sendToClient("This directory already exist\n");
         return ;
@@ -147,13 +163,12 @@ void mkdirCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs
     addDirectoryEntry(new_dir_inode, miniFs, new_dir_inode->i_id, ".");
     addDirectoryEntry(new_dir_inode, miniFs, inode->i_id, "..");
 
-    DirectoryEntry* new_dir_note = getFreeDirEntryFromInode(inode);
+    DirectoryEntry* new_dir_note = getFreeDirEntryFromInode(inode, miniFs);
     new_dir_note->inode_id = new_dir_inode->i_id;
-    strncpy(new_dir_note->obj_name, dir_name, 14);
+    strncpy(new_dir_note->obj_name, dir_name, FILE_TITLE_MAX_LEN);
 }
 
-void lsCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
-
+void lsCommand(Inode* inode, char dir_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     if (strlen(dir_name) != 0 && strcmp(dir_name, "/") != 0) {
         inode = goToNextInode(inode, dir_name, miniFs);
     }
@@ -166,19 +181,20 @@ void lsCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
         return;
     }
 
-    for (u_int addr_num = 0; inode->i_block[addr_num] != NULL && addr_num < 15; ++addr_num) {
-        Block* data_block = inode->i_block[addr_num];
-        for (u_int elem_num = 0; elem_num < 64; ++elem_num) {
-            if (!isEmptyDirEntry(&data_block->dir_entries[elem_num])) {
-                sendToClient(data_block->dir_entries[elem_num].obj_name);
-                sendToClient("\n");
+    for (u_int addr_num = 0; addr_num < DIRECT_ADDR_IN_INODE_CNT; ++addr_num) {
+        if (inode->i_block[addr_num] != NULL) {
+            Block* data_block = inode->i_block[addr_num];
+            for (u_int elem_num = 0; elem_num < 64; ++elem_num) {
+                if (!isEmptyDirEntry(&data_block->dir_entries[elem_num])) {
+                    sendToClient(data_block->dir_entries[elem_num].obj_name);
+                    sendToClient("\n");
+                }
             }
         }
     }
 }
 
-void cdCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
-
+void cdCommand(Inode* inode, char dir_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     if (strlen(dir_name) != 0 && strcmp(dir_name, "/") != 0) {
         inode = goToNextInode(inode, dir_name, miniFs);
     }
@@ -194,8 +210,7 @@ void cdCommand(Inode* inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
     USER_TMP_INODE = inode;
 }
 
-void rmdirCommand(Inode* parent_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
-
+void rmdirCommand(Inode* parent_inode, char dir_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     Inode* inode = NULL;
     if (strlen(dir_name) != 0 && strcmp(dir_name, "/") != 0) {
         inode = goToNextInode(parent_inode, dir_name, miniFs);
@@ -204,22 +219,23 @@ void rmdirCommand(Inode* parent_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs*
     if (inode == NULL) {
         sendToClient("This directory does not exist \n");
         return;
-    } else if (!isDirectory(inode)) {
+    } else if (USER_TMP_INODE == inode) {
+        sendToClient("Unable to call rmdir command for temporary directory \n");
+        return;
+    }else if (!isDirectory(inode)) {
         sendToClient("Unable to call rmdir command for regular file \n");
         return;
-    } else if (!isEmptyDir(inode, miniFs)) {
+    } else if (!isEmptyDir(inode)) {
         sendToClient("This directory is not empty \n");
         return;
     }
 
-
-    rmDirectoryEntry(parent_inode, dir_name);
+    rmNameFromDirectory(parent_inode, dir_name);
     freeInode(inode, miniFs);
 }
 
 
-void touchCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
-
+void touchCommand(Inode* parent_inode, char file_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     if (isDirContainName(parent_inode, file_name)) {
         sendToClient("This file or directory already exist\n");
         return ;
@@ -234,13 +250,24 @@ void touchCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs
 
     initFileInode(new_file_inode);
 
-    DirectoryEntry* new_dir_note = getFreeDirEntryFromInode(parent_inode);
+    DirectoryEntry* new_dir_note = getFreeDirEntryFromInode(parent_inode, miniFs);
     new_dir_note->inode_id = new_file_inode->i_id;
-    strncpy(new_dir_note->obj_name, file_name, 14);
+    strncpy(new_dir_note->obj_name, file_name, FILE_TITLE_MAX_LEN);
 }
 
-void writeCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
+#define PUT_TEXT_IN_BLOCK(data_block) \
+    if (*(data_block) == NULL) { \
+        *(data_block) = getFreeBlock(miniFs); \
+    } \
+    u_int text_block_size = text_size; \
+    if (text_block_size > miniFs->super_block.s_log_block_size) { \
+        text_block_size = miniFs->super_block.s_log_block_size; \
+    } \
+    strncpy((char *) *(data_block), file_text + text_shift, text_block_size); \
+    text_shift += text_block_size; \
+    text_size -= text_block_size;
 
+void writeCommand(Inode* parent_inode, char file_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     char file_text[100000];
     memset(file_text, 0, sizeof(file_text));
     u_int text_size = 0;
@@ -261,31 +288,27 @@ void writeCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs
     --text_size;
 
     Inode* inode = goToNextInode(parent_inode, file_name, miniFs);
-    if (inode == NULL) {
-        touchCommand(parent_inode, file_name, miniFs);
+    if (inode != NULL) {
+        rmCommand(parent_inode, file_name, miniFs);
     }
+    touchCommand(parent_inode, file_name, miniFs);
     inode = goToNextInode(parent_inode, file_name, miniFs);
 
     u_int text_shift = 0;
-    for (u_int addr_num = 0; text_size > 0 && addr_num < 15; ++addr_num) {
-        if (inode->i_block[addr_num] == NULL) {
-            inode->i_block[addr_num] = getFreeBlock(miniFs);
-        }
-        Block *data_block = inode->i_block[addr_num];
+    for (u_int addr_num = 0; text_size > 0 && addr_num < DIRECT_ADDR_IN_INODE_CNT; ++addr_num) {
+        PUT_TEXT_IN_BLOCK(&inode->i_block[addr_num]);
+    }
 
-        u_int text_block_size = text_size;
-        if (text_block_size > miniFs->super_block.s_log_block_size) {
-            text_block_size = miniFs->super_block.s_log_block_size;
-        }
+    if (text_size > 0 && inode->i_block[INDIRECT_ADDR_BLOCK_NUM] == NULL) {
+        inode->i_block[INDIRECT_ADDR_BLOCK_NUM] = getFreeBlock(miniFs);
+    }
 
-        strncpy((char *) data_block, file_text + text_shift, text_block_size);
-        text_shift += text_block_size;
-        text_size -= text_block_size;
+    for (u_int addr_num = 0; text_size > 0 && addr_num < DIRECT_ADDR_IN_BLOCK_CNT; ++addr_num) {
+        PUT_TEXT_IN_BLOCK(&inode->i_block[INDIRECT_ADDR_BLOCK_NUM]->blocks_ptr[addr_num]);
     }
 }
 
-void catCommand(Inode* inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
-
+void catCommand(Inode* inode, char file_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     if (strlen(file_name) != 0 && strcmp(file_name, "/") != 0) {
         inode = goToNextInode(inode, file_name, miniFs);
     }
@@ -298,19 +321,14 @@ void catCommand(Inode* inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs)
         return;
     }
 
-    for (u_int addr_num = 0; addr_num < 15; ++addr_num) {
-        Block *data_block = inode->i_block[addr_num];
-        if (data_block == NULL) {
-            continue;
-        }
-
-        sendToClient((char *) data_block);
+    Block* block;
+    FOREACH_BLOCK_IN_INODE(block, inode) {
+        sendToClient((char *) block);
         sendToClient("\n");
     }
 }
 
-void rmCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
-
+void rmCommand(Inode* parent_inode, char file_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     Inode* inode = goToNextInode(parent_inode, file_name, miniFs);
 
     if (inode == NULL) {
@@ -321,12 +339,12 @@ void rmCommand(Inode* parent_inode, char file_name[MAX_FILE_NAME_LEN], MiniFs* m
         return;
     }
 
-    rmDirectoryEntry(parent_inode, file_name);
+    rmNameFromDirectory(parent_inode, file_name);
     freeInode(inode, miniFs);
 }
 
 
-void saveMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
+void saveMiniFs(MiniFs* miniFs, char file_name[FILE_TITLE_MAX_LEN]) {
     FILE* fd = fopen(file_name, "wb");
     if (fd == NULL) {
         sendToClient("Couldn't open the file for writing\n");
@@ -334,11 +352,10 @@ void saveMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
     }
 
     saveFs(miniFs, fd);
-
     fclose(fd);
 }
 
-void loadMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
+void loadMiniFs(MiniFs* miniFs, char file_name[FILE_TITLE_MAX_LEN]) {
     FILE* fd = fopen(file_name, "rb");
     if (fd == NULL) {
         sendToClient("Couldn't open the file\n");
@@ -350,6 +367,5 @@ void loadMiniFs(MiniFs* miniFs, char file_name[MAX_FILE_NAME_LEN]) {
     }
 
     loadFs(miniFs, fd);
-
     fclose(fd);
 }

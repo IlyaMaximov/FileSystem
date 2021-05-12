@@ -25,68 +25,6 @@ Inode* getFreeInode(MiniFs* miniFs) {
     return NULL;
 }
 
-void freeEmptyBlock(DirectoryBlock* block, MiniFs* miniFs) {
-    u_int group = -1;
-
-    for (u_int group_num = 0; group_num < miniFs->super_block.s_groups_count; ++group_num) {
-        if ((Block*) &miniFs->groups_blocks[group_num] > block) {
-            break;
-        }
-        ++group;
-    }
-
-    u_int block_num = 0;
-    Block* data_blocks = miniFs->groups_descriptors[group].bg_data_blocks;
-    for (;block_num < miniFs->super_block.s_blocks_per_group; ++block_num) {
-        if (data_blocks + block_num == block) {
-            return;
-        }
-    }
-
-    --miniFs->groups_descriptors[group].bg_free_blocks_count;
-    setBit(block_num, 0, miniFs->groups_descriptors[group].bg_block_bitmap);
-    memset(&miniFs->groups_descriptors[group].bg_data_blocks[block_num], 0, sizeof(Block));
-}
-
-void freeInode(Inode* inode, MiniFs* miniFs) {
-    GroupDescriptors* group_desc = &miniFs->groups_descriptors[inode->i_gid];
-    u_int inode_num_group = inode->i_id % miniFs->super_block.s_inodes_per_group;
-
-    ++group_desc->bg_free_inodes_count;
-    setBit(inode_num_group, 0, group_desc->bg_inode_bitmap);
-
-    for (u_int addr_num = 0; addr_num < 15; ++ addr_num) {
-        if (inode->i_block[addr_num] == NULL) {
-            continue;
-        }
-        freeEmptyBlock(inode->i_block[addr_num], miniFs);
-    }
-
-    memset(inode, 0, sizeof(Inode));
-}
-
-bool isFreeDirBlock(Block* block) {
-    int names_cnt = 0;
-    for (u_int elem_num = 0; elem_num < 64; ++elem_num) {
-        if (!isEmptyDirEntry(&block->dir_entries[elem_num])) {
-            ++names_cnt;
-        }
-    }
-    return (names_cnt <= 2);
-}
-
-bool isEmptyDir(Inode* inode, MiniFs* miniFs) {
-    for (u_int addr_num = 0; addr_num < 15; ++ addr_num) {
-        if (inode->i_block[addr_num] == NULL) {
-            continue;
-        }
-        if (!isFreeDirBlock(inode->i_block[addr_num])) {
-            return false;
-        }
-    }
-    return true;
-}
-
 Block* getFreeBlock(MiniFs* miniFs) {
     for (u_int group_num = 0; group_num < miniFs->super_block.s_groups_count; ++group_num) {
         int bit_num = getFreeBit(miniFs->super_block.s_blocks_per_group,
@@ -101,30 +39,105 @@ Block* getFreeBlock(MiniFs* miniFs) {
     return NULL;
 }
 
-int addDirectoryEntry(Inode* inode, MiniFs* miniFs, u_int inode_num, char file_name[]) {
-    for (u_int addr_num = 0; addr_num < 15; ++ addr_num) {
+void freeBlock(DirectoryBlock* block, MiniFs* miniFs) {
+    u_int group = -1;
 
-        if (inode->i_block[addr_num] == NULL) {
-            inode->i_block[addr_num] = getFreeBlock(miniFs);
+    for (u_int group_num = 0; group_num < miniFs->super_block.s_groups_count; ++group_num) {
+        if ((Block*) &miniFs->groups_blocks[group_num] > block) {
+            break;
         }
-
-        DirectoryEntry* new_entry = getFreeDirectoryEntry(inode->i_block[addr_num]);
-        if (new_entry != NULL) {
-            new_entry->inode_id = inode_num;
-            strncpy(new_entry->obj_name, file_name, 14);
-            return 0;
-        }
+        ++group;
     }
-    return -1;
+
+    Block* data_blocks = miniFs->groups_descriptors[group].bg_data_blocks;
+    u_int block_num = block - data_blocks;
+
+    --miniFs->groups_descriptors[group].bg_free_blocks_count;
+    setBit(block_num, 0, miniFs->groups_descriptors[group].bg_block_bitmap);
+    memset(&miniFs->groups_descriptors[group].bg_data_blocks[block_num], 0, sizeof(Block));
 }
 
-int rmDirectoryEntry(Inode* inode, char dir_name[]) {
-    for (u_int addr_num = 0; addr_num < 15; ++ addr_num) {
+void freeInode(Inode* inode, MiniFs* miniFs) {
+    GroupDescriptors* group_desc = &miniFs->groups_descriptors[inode->i_gid];
+    u_int inode_num_group = inode->i_id % miniFs->super_block.s_inodes_per_group;
 
-        Block* block = inode->i_block[addr_num];
-        if (block == NULL) {
-            continue;
+    ++group_desc->bg_free_inodes_count;
+    setBit(inode_num_group, 0, group_desc->bg_inode_bitmap);
+
+    Block* block_ptr;
+    FOREACH_BLOCK_IN_INODE(block_ptr, inode) {
+        freeBlock(block_ptr, miniFs);
+    }
+    if (inode->i_block[INDIRECT_ADDR_BLOCK_NUM] != NULL) {
+        freeBlock(inode->i_block[INDIRECT_ADDR_BLOCK_NUM], miniFs);
+    }
+
+    memset(inode, 0, sizeof(Inode));
+}
+
+#define RETURN_FREE_DIR_EMPTY(block_ptr, miniFs) \
+    if (*(block_ptr) == NULL) { \
+        *(block_ptr) = getFreeBlock((miniFs)); \
+    } \
+    DirectoryEntry* new_dir_entry = getFreeDirectoryEntry(*(block_ptr)); \
+    if (new_dir_entry != NULL) { \
+        return new_dir_entry; \
+    } \
+
+DirectoryEntry* getFreeDirEntryFromInode(Inode* inode, MiniFs* miniFs) {
+    for (u_int addr_num = 0; addr_num < DIRECT_ADDR_IN_INODE_CNT; ++addr_num) {
+        RETURN_FREE_DIR_EMPTY(&inode->i_block[addr_num], miniFs);
+    }
+
+    if (inode->i_block[INDIRECT_ADDR_BLOCK_NUM] == NULL) {
+        inode->i_block[INDIRECT_ADDR_BLOCK_NUM] = getFreeBlock(miniFs);
+    }
+
+    for (u_int addr_num = 0; addr_num < DIRECT_ADDR_IN_BLOCK_CNT; ++addr_num) {
+        RETURN_FREE_DIR_EMPTY(&inode->i_block[INDIRECT_ADDR_BLOCK_NUM]->blocks_ptr[addr_num], miniFs);
+    }
+
+    return NULL;
+}
+
+////////////////////////////////////////////////////////////////
+
+bool isFreeDirBlock(Block* block) {
+    u_int32_t names_cnt = 0;
+    for (u_int elem_num = 0; elem_num < 64; ++elem_num) {
+        if (!isDefaultDirEntry(&block->dir_entries[elem_num])) {
+            ++names_cnt;
         }
+    }
+    return (names_cnt == 0);
+}
+
+bool isEmptyDir(Inode* inode) {
+    Block* block_ptr;
+    FOREACH_BLOCK_IN_INODE(block_ptr, inode) {
+        if (!isFreeDirBlock(block_ptr)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+int addDirectoryEntry(Inode* inode, MiniFs* miniFs, u_int inode_num, char file_name[]) {
+    DirectoryEntry* new_dir_entry = getFreeDirEntryFromInode(inode, miniFs);
+
+    if (new_dir_entry == NULL) {
+        return -1;
+    }
+
+    new_dir_entry->inode_id = inode_num;
+    strncpy(new_dir_entry->obj_name, file_name, FILE_TITLE_MAX_LEN);
+    return 0;
+
+}
+
+int rmNameFromDirectory(Inode* inode, char dir_name[]) {
+    Block* block;
+    FOREACH_BLOCK_IN_INODE(block, inode) {
         for (u_int elem_num = 0; elem_num < 64; ++elem_num) {
             if (strcmp(block->dir_entries[elem_num].obj_name, dir_name) == 0) {
                 memset(&block->dir_entries[elem_num], 0, sizeof(struct DirectoryEntry));
@@ -135,45 +148,13 @@ int rmDirectoryEntry(Inode* inode, char dir_name[]) {
     return -1;
 }
 
-void initRootDirectory(MiniFs* miniFs) {
-    // создание корневой папки это инициализация, поэтому не учитываем её в монтированиях
-    Inode* root_dir_inode = getFreeInode(miniFs);
-    initDirectoryInode(root_dir_inode);
-
-    addDirectoryEntry(root_dir_inode, miniFs, 0, ".");
-    addDirectoryEntry(root_dir_inode, miniFs, 0, "..");
-}
-
-void initMiniFs(MiniFs* miniFs) {
-    memset(miniFs, 0, sizeof(MiniFs));
-    initSuperBlock(&miniFs->super_block);
-    initGroupsDescriptors((GroupDescriptors *)&miniFs->groups_descriptors, &miniFs->super_block);
-    initRootDirectory(miniFs);
-}
-
-int32_t getFileSize(char file_name[]){
-    int32_t file_size = 0;
-    struct stat file_stat_buff;
-    int fd = open(file_name, O_RDONLY);
-    if (fd == -1) {
-        return -1;
-    }
-
-    if ((fstat(fd, &file_stat_buff) != 0) || (!S_ISREG(file_stat_buff.st_mode))) {
-        file_size = -1;
-    }
-    else {
-        file_size = file_stat_buff.st_size;
-    }
-    close(fd);
-    return file_size;
-}
+////////////////////////////////////////////////////////////////
 
 Inode* getRootDirInode(MiniFs* miniFs) {
     return miniFs->groups_descriptors[0].bg_inode_table;
 }
 
-Inode* goToNextInode(Inode* prev_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs* miniFs) {
+Inode* goToNextInode(Inode* prev_inode, char dir_name[FILE_TITLE_MAX_LEN], MiniFs* miniFs) {
     for (u_int addr_num = 0; prev_inode->i_block[addr_num] != NULL && addr_num < 16; ++addr_num) {
         int i_node_num = getInodeNumByName(prev_inode->i_block[addr_num], dir_name);
         if (i_node_num != -1 && isDirectory(prev_inode)) {
@@ -183,7 +164,7 @@ Inode* goToNextInode(Inode* prev_inode, char dir_name[MAX_FILE_NAME_LEN], MiniFs
     return NULL;
 }
 
-Inode* goToInode(MiniFs* miniFs, char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN], u_int path_depth) {
+Inode* goToInode(MiniFs* miniFs, char path[MAX_DIR_CNT_PATH][FILE_TITLE_MAX_LEN], u_int path_depth) {
     Inode* inode_ptr;
     u_int dir_num = 0;
     if (strcmp(path[0], "/") == 0) {
@@ -206,6 +187,26 @@ Inode* goToInode(MiniFs* miniFs, char path[MAX_DIR_CNT_PATH][MAX_FILE_NAME_LEN],
     return inode_ptr;
 }
 
+////////////////////////////////////////////////////////////////
+
+void initRootDirectory(MiniFs* miniFs) {
+    // создание корневой папки это инициализация, поэтому не учитываем её в монтированиях
+    Inode* root_dir_inode = getFreeInode(miniFs);
+    initDirectoryInode(root_dir_inode);
+
+    addDirectoryEntry(root_dir_inode, miniFs, 0, ".");
+    addDirectoryEntry(root_dir_inode, miniFs, 0, "..");
+}
+
+void initMiniFs(MiniFs* miniFs) {
+    memset(miniFs, 0, sizeof(MiniFs));
+    initSuperBlock(&miniFs->super_block);
+    initGroupsDescriptors((GroupDescriptors *)&miniFs->groups_descriptors, &miniFs->super_block);
+    initRootDirectory(miniFs);
+}
+
+////////////////////////////////////////////////////////////////
+
 void saveFs(MiniFs* miniFs, FILE* file_stream) {
     fwrite(miniFs, sizeof(*miniFs), 1, file_stream);
 
@@ -216,7 +217,6 @@ void saveFs(MiniFs* miniFs, FILE* file_stream) {
         long block_bitmap_shift = (char *) group_desc[group_num].bg_block_bitmap - (char *) group_desc;
         long inode_table_shift =  (char *) group_desc[group_num].bg_inode_table -  (char *) group_desc;
         long block_data_shift =   (char *) group_desc[group_num].bg_data_blocks -  (char *) group_desc;
-//        printf("%ld\n", block_data_shift);
 
         fwrite(&inode_bitmap_shift, sizeof(inode_bitmap_shift), 1, file_stream);
         fwrite(&block_bitmap_shift, sizeof(block_bitmap_shift), 1, file_stream);
@@ -229,15 +229,15 @@ void saveFs(MiniFs* miniFs, FILE* file_stream) {
 
             Inode inode = miniFs->groups_blocks[group_num].inode_table[inode_num];
 
-            long block_shifts[15];
-            for (u_int block_num = 0; block_num < 15; ++block_num) {
+            long block_shifts[DIRECT_ADDR_IN_INODE_CNT + 1];
+            for (u_int block_num = 0; block_num < DIRECT_ADDR_IN_INODE_CNT + 1; ++block_num) {
                 if (inode.i_block[block_num] == NULL) {
                     block_shifts[block_num] = (long) NULL;
                 } else {
                     block_shifts[block_num] = (char *) inode.i_block[block_num] - (char *) miniFs->groups_blocks;
                 }
             }
-            fwrite(block_shifts, sizeof(long), 15, file_stream);
+            fwrite(block_shifts, sizeof(long), DIRECT_ADDR_IN_INODE_CNT + 1, file_stream);
         }
     }
 }
@@ -267,10 +267,10 @@ void loadFs(MiniFs* miniFs, FILE* file_stream) {
 
             Inode* inode = &miniFs->groups_blocks[group_num].inode_table[inode_num];
 
-            long block_shifts[15];
-            fread(block_shifts, sizeof(long), 15, file_stream);
+            long block_shifts[DIRECT_ADDR_IN_INODE_CNT + 1];
+            fread(block_shifts, sizeof(long), DIRECT_ADDR_IN_INODE_CNT + 1, file_stream);
 
-            for (u_int block_num = 0; block_num < 15; ++block_num) {
+            for (u_int block_num = 0; block_num < DIRECT_ADDR_IN_INODE_CNT + 1; ++block_num) {
                 if (block_shifts[block_num] == (long) NULL) {
                     inode->i_block[block_num] = NULL;
                 } else {
@@ -279,5 +279,4 @@ void loadFs(MiniFs* miniFs, FILE* file_stream) {
             }
         }
     }
-
 }

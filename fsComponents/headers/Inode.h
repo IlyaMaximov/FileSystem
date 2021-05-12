@@ -22,17 +22,12 @@ struct Inode {
 
 
 void initInode(Inode* inode);
-
 void initDirectoryInode(Inode* inode);
 
 bool isDirectory(Inode* inode);
-
 bool isFile(Inode* inode);
 
 void initFileInode(Inode* inode);
-
 bool isDirContainName(Inode* inode, char dir_name[]);
-
-DirectoryEntry* getFreeDirEntryFromInode(Inode* inode);
 
 #endif //MINIFS_INODE_H

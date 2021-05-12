@@ -1,4 +1,5 @@
 #include "../headers/Inode.h"
+#include <string.h>
 
 void initInode(Inode* inode) {
 
@@ -30,20 +31,11 @@ bool isFile(Inode* inode) {
 
 
 bool isDirContainName(Inode* inode, char dir_name[]) {
-    for (u_int addr_num = 0; inode->i_block[addr_num] != NULL && addr_num < 15; ++addr_num) {
-        if (getInodeNumByName(inode->i_block[addr_num], dir_name) != -1) {
+    Block* block;
+    FOREACH_BLOCK_IN_INODE(block, inode) {
+        if (getInodeNumByName(block, dir_name) != -1) {
             return true;
         }
     }
     return false;
-}
-
-DirectoryEntry* getFreeDirEntryFromInode(Inode* inode) {
-    for (u_int addr_num = 0; inode->i_block[addr_num] != NULL && addr_num < 15; ++addr_num) {
-        DirectoryEntry* new_dir = getFreeDirectoryEntry(inode->i_block[addr_num]);
-        if (new_dir != NULL) {
-            return new_dir;
-        }
-    }
-    return NULL;
 }
